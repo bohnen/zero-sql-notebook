@@ -136,7 +136,11 @@ export function renameNotebook(id: string, title: string): void {
   notebooks = { ...notebooks, [id]: touch({ ...nb, title }) };
 }
 
-export function importNotebook(title: string, cells: Cell[]): string {
+export function importNotebook(
+  title: string,
+  cells: Cell[],
+  options: { gistId?: string } = {},
+): string {
   const now = new Date().toISOString();
   const nb: Notebook = {
     id: newId(),
@@ -144,10 +148,17 @@ export function importNotebook(title: string, cells: Cell[]): string {
     cells: cells.map((c) => ({ ...c, id: newId() })),
     createdAt: now,
     updatedAt: now,
+    gistId: options.gistId,
   };
   notebooks = { ...notebooks, [nb.id]: nb };
   activeId = nb.id;
   return nb.id;
+}
+
+export function setGistId(notebookId: string, gistId: string | undefined): void {
+  const nb = notebooks[notebookId];
+  if (!nb) return;
+  notebooks = { ...notebooks, [notebookId]: touch({ ...nb, gistId }) };
 }
 
 export function initAutoSave(): () => void {

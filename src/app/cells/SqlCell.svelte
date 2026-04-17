@@ -12,9 +12,10 @@
     cells: Cell[];
     onChange: (next: string) => void;
     instance: Instance | null;
+    readOnly?: boolean;
   }
 
-  let { cellId, source, cells, onChange, instance }: Props = $props();
+  let { cellId, source, cells, onChange, instance, readOnly = false }: Props = $props();
 
   let running = $state(false);
   let result = $state<SqlResult | null>(null);
@@ -73,7 +74,7 @@
       {running ? '…' : '▶'} Run
     </button>
   </div>
-  <div class="editor" use:codemirror={{ doc: source, onChange, onRun: run }}></div>
+  <div class="editor" use:codemirror={{ doc: source, onChange, onRun: run, readOnly }}></div>
   {#if result !== null || error !== null || running}
     <ResultPanel {result} {elapsedMs} {error} {running} />
   {/if}

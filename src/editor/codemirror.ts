@@ -8,11 +8,12 @@ export interface CodemirrorActionArgs {
   doc: string;
   onChange: (value: string) => void;
   onRun?: () => void;
+  readOnly?: boolean;
 }
 
 export function codemirror(node: HTMLElement, args: CodemirrorActionArgs) {
   let current = args;
-  const docCompartment = new Compartment();
+  const readOnlyCompartment = new Compartment();
 
   const runKeymap = keymap.of([
     {
@@ -42,18 +43,24 @@ export function codemirror(node: HTMLElement, args: CodemirrorActionArgs) {
         sql(),
         oneDark,
         updateListener,
-        docCompartment.of([]),
+        readOnlyCompartment.of(EditorState.readOnly.of(args.readOnly ?? false)),
       ],
     }),
   });
 
   return {
     update(next: CodemirrorActionArgs) {
+      const prev = current;
       current = next;
       const editorText = view.state.doc.toString();
       if (next.doc !== editorText) {
         view.dispatch({
           changes: { from: 0, to: editorText.length, insert: next.doc },
+        });
+      }
+      if ((prev.readOnly ?? false) !== (next.readOnly ?? false)) {
+        view.dispatch({
+          effects: readOnlyCompartment.reconfigure(EditorState.readOnly.of(next.readOnly ?? false)),
         });
       }
     },

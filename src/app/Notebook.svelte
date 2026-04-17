@@ -1,7 +1,6 @@
 <script lang="ts">
   import {
     addCell,
-    getActiveNotebook,
     moveCell,
     removeCell,
     renameNotebook,
@@ -9,20 +8,23 @@
   } from '../lib/state/notebook.svelte';
   import { cancelAll, getRunner } from '../lib/state/runners';
   import type { Instance } from '../lib/instance/client';
+  import type { Notebook } from '../lib/notebook/types';
   import MarkdownCell from './cells/MarkdownCell.svelte';
   import SqlCell from './cells/SqlCell.svelte';
   import EnvCell from './cells/EnvCell.svelte';
 
   interface Props {
+    notebook: Notebook;
     instance: Instance | null;
+    readOnly?: boolean;
+    toolbarExtras?: import('svelte').Snippet;
   }
 
-  let { instance }: Props = $props();
-  const notebook = $derived(getActiveNotebook());
+  let { notebook, instance, readOnly = false, toolbarExtras }: Props = $props();
   let runningAll = $state(false);
 
   async function runAll() {
-    if (runningAll || !notebook) return;
+    if (runningAll) return;
     runningAll = true;
     try {
       for (const cell of notebook.cells) {
@@ -49,31 +51,34 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-{#if !notebook}
-  <p class="empty">No notebook selected.</p>
-{:else}
-  <section class="notebook">
-    <div class="title-row">
+<section class="notebook">
+  <div class="title-row">
+    {#if readOnly}
+      <h2 class="title ro">{notebook.title || 'Untitled'}</h2>
+    {:else}
       <input
         class="title"
         type="text"
         value={notebook.title}
         oninput={(e) => renameNotebook(notebook.id, (e.currentTarget as HTMLInputElement).value)}
       />
-      <div class="top-actions">
-        <button type="button" class="run-all" disabled={runningAll || !instance} onclick={runAll}>
-          ▶▶ Run All
-        </button>
-        {#if runningAll}
-          <button type="button" class="cancel" onclick={cancel}>■ Cancel (Esc)</button>
-        {/if}
-      </div>
+    {/if}
+    <div class="top-actions">
+      {#if toolbarExtras}{@render toolbarExtras()}{/if}
+      <button type="button" class="run-all" disabled={runningAll || !instance} onclick={runAll}>
+        ▶▶ Run All
+      </button>
+      {#if runningAll}
+        <button type="button" class="cancel" onclick={cancel}>■ Cancel (Esc)</button>
+      {/if}
     </div>
-    <div class="cells">
-      {#each notebook.cells as cell, idx (cell.id)}
-        <article class="cell-wrap cell-{cell.type}">
-          <header class="cell-header">
-            <span class="label">{cell.type}</span>
+  </div>
+  <div class="cells">
+    {#each notebook.cells as cell, idx (cell.id)}
+      <article class="cell-wrap cell-{cell.type}">
+        <header class="cell-header">
+          <span class="label">{cell.type}</span>
+          {#if !readOnly}
             <div class="actions">
               <button
                 type="button"
@@ -94,36 +99,44 @@
                 onclick={() => removeCell(cell.id)}>×</button
               >
             </div>
-          </header>
-          {#if cell.type === 'markdown'}
-            <MarkdownCell
-              source={cell.source}
-              onChange={(next) => updateCellSource(cell.id, next)}
-            />
-          {:else if cell.type === 'sql'}
-            <SqlCell
-              cellId={cell.id}
-              source={cell.source}
-              cells={notebook.cells}
-              onChange={(next) => updateCellSource(cell.id, next)}
-              {instance}
-            />
-          {:else}
-            <EnvCell source={cell.source} onChange={(next) => updateCellSource(cell.id, next)} />
           {/if}
-        </article>
-      {/each}
-    </div>
-    {#if notebook.cells.length === 0}
-      <p class="empty">This notebook has no cells yet.</p>
-    {/if}
+        </header>
+        {#if cell.type === 'markdown'}
+          <MarkdownCell
+            source={cell.source}
+            {readOnly}
+            onChange={(next) => updateCellSource(cell.id, next)}
+          />
+        {:else if cell.type === 'sql'}
+          <SqlCell
+            cellId={cell.id}
+            source={cell.source}
+            cells={notebook.cells}
+            {readOnly}
+            onChange={(next) => updateCellSource(cell.id, next)}
+            {instance}
+          />
+        {:else}
+          <EnvCell
+            source={cell.source}
+            {readOnly}
+            onChange={(next) => updateCellSource(cell.id, next)}
+          />
+        {/if}
+      </article>
+    {/each}
+  </div>
+  {#if notebook.cells.length === 0}
+    <p class="empty">This notebook has no cells yet.</p>
+  {/if}
+  {#if !readOnly}
     <footer class="footer">
       <button type="button" onclick={() => addCell('markdown')}>+ md</button>
       <button type="button" onclick={() => addCell('sql')}>+ sql</button>
       <button type="button" onclick={() => addCell('env')}>+ env</button>
     </footer>
-  </section>
-{/if}
+  {/if}
+</section>
 
 <style>
   .notebook {
@@ -153,6 +166,9 @@
     outline: none;
     border-color: #2e3350;
     background: #22263a;
+  }
+  .title.ro {
+    padding: 4px 0;
   }
   .top-actions {
     display: flex;

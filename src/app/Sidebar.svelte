@@ -42,8 +42,8 @@
     const file = target.files?.[0];
     if (!file) return;
     const text = await readFileAsText(file);
-    const { title, cells } = parseImportedMarkdown(text, file.name.replace(/\.md$/i, ''));
-    importNotebook(title, cells);
+    const { title, cells, gistId } = parseImportedMarkdown(text, file.name.replace(/\.md$/i, ''));
+    importNotebook(title, cells, { gistId });
     target.value = '';
   }
 </script>

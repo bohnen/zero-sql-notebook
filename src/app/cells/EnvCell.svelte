@@ -4,14 +4,18 @@
   interface Props {
     source: string;
     onChange: (next: string) => void;
+    readOnly?: boolean;
   }
 
-  let { source, onChange }: Props = $props();
+  let { source, onChange, readOnly = false }: Props = $props();
   const parsed = $derived(parseEnv(source));
   const varCount = $derived(Object.keys(parsed.values).length);
 </script>
 
-<textarea value={source} oninput={(e) => onChange((e.currentTarget as HTMLTextAreaElement).value)}
+<textarea
+  value={source}
+  readonly={readOnly}
+  oninput={(e) => onChange((e.currentTarget as HTMLTextAreaElement).value)}
 ></textarea>
 
 <div class="meta" class:has-errors={parsed.errors.length > 0}>

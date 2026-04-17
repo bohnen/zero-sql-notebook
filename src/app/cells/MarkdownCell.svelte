@@ -5,14 +5,15 @@
   interface Props {
     source: string;
     onChange: (next: string) => void;
+    readOnly?: boolean;
   }
 
-  let { source, onChange }: Props = $props();
+  let { source, onChange, readOnly = false }: Props = $props();
   let editing = $state(false);
   const rendered = $derived(DOMPurify.sanitize(marked.parse(source, { async: false }) as string));
 </script>
 
-{#if editing}
+{#if editing && !readOnly}
   <!-- svelte-ignore a11y_autofocus -->
   <textarea
     value={source}
@@ -21,9 +22,15 @@
     onblur={() => (editing = false)}
   ></textarea>
 {:else}
-  <button type="button" class="preview" aria-label="Edit markdown" onclick={() => (editing = true)}>
+  <button
+    type="button"
+    class="preview"
+    aria-label={readOnly ? 'Markdown preview' : 'Edit markdown'}
+    disabled={readOnly}
+    onclick={() => !readOnly && (editing = true)}
+  >
     {#if source.trim() === ''}
-      <span class="placeholder">Click to edit markdown…</span>
+      <span class="placeholder">{readOnly ? 'Empty' : 'Click to edit markdown…'}</span>
     {:else}
       <!-- eslint-disable-next-line svelte/no-at-html-tags -->
       {@html rendered}
