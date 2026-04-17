@@ -1,40 +1,64 @@
 <script lang="ts">
   import { codemirror } from '../../editor/codemirror';
-  import { runCell, type SqlResult } from '../../lib/execute/run';
+  import { runCell, UndefinedVariableError, type SqlResult } from '../../lib/execute/run';
   import type { Instance } from '../../lib/instance/client';
+  import type { Cell } from '../../lib/notebook/types';
+  import { registerController, registerRunner } from '../../lib/state/runners';
   import ResultPanel from './ResultPanel.svelte';
 
   interface Props {
+    cellId: string;
     source: string;
+    cells: Cell[];
     onChange: (next: string) => void;
     instance: Instance | null;
   }
 
-  let { source, onChange, instance }: Props = $props();
+  let { cellId, source, cells, onChange, instance }: Props = $props();
 
   let running = $state(false);
   let result = $state<SqlResult | null>(null);
   let error = $state<string | null>(null);
   let elapsedMs = $state<number | null>(null);
 
-  async function run() {
-    if (!instance || running) return;
+  async function run(): Promise<boolean> {
+    if (!instance || running) return false;
     running = true;
     error = null;
     result = null;
     elapsedMs = null;
+    const controller = new AbortController();
+    registerController(cellId, controller);
     const start = performance.now();
     try {
-      const r = await runCell(source, instance);
+      const r = await runCell({ source, cells, instance }, { signal: controller.signal });
       elapsedMs = Math.round(performance.now() - start);
       result = r;
+      return true;
     } catch (err) {
       elapsedMs = Math.round(performance.now() - start);
-      error = err instanceof Error ? err.message : String(err);
+      if (err instanceof UndefinedVariableError) {
+        error = err.refs
+          .map((r) => `Undefined variable \${${r.name}} at line ${r.line}, col ${r.col}`)
+          .join('\n');
+      } else if (err instanceof DOMException && err.name === 'AbortError') {
+        error = 'Cancelled';
+      } else if (err instanceof DOMException && err.name === 'TimeoutError') {
+        error = 'Timed out';
+      } else {
+        error = err instanceof Error ? err.message : String(err);
+      }
+      return false;
     } finally {
       running = false;
+      registerController(cellId, null);
     }
   }
+
+  $effect(() => {
+    const unregister = registerRunner(cellId, run);
+    return unregister;
+  });
 </script>
 
 <div class="sql-cell">

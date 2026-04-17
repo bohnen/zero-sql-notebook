@@ -1,3 +1,5 @@
+import type { Cell } from '../notebook/types';
+import { collectVariables, expandSql, type UndefinedRef } from '../env/expand';
 import { parseConnectionString, type Instance } from '../instance/client';
 import { splitStatements } from './split';
 
@@ -18,19 +20,30 @@ export interface SqlResult {
 
 export interface RunOptions {
   signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
+export class UndefinedVariableError extends Error {
+  readonly refs: UndefinedRef[];
+  constructor(refs: UndefinedRef[]) {
+    super(`Undefined variable${refs.length > 1 ? 's' : ''}: ${refs.map((r) => r.name).join(', ')}`);
+    this.name = 'UndefinedVariableError';
+    this.refs = refs;
+  }
 }
 
 async function executeOne(
   query: string,
   instance: Instance,
-  options: RunOptions,
+  database: string,
+  signal: AbortSignal,
 ): Promise<SqlResult> {
-  const { host, username, password, database } = parseConnectionString(instance.connectionString);
+  const { host, username, password } = parseConnectionString(instance.connectionString);
   const res = await fetch('/api/sql', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ host, username, password, database, query }),
-    signal: options.signal,
+    signal,
   });
   const text = await res.text();
   let parsed: SqlResult = {};
@@ -49,18 +62,45 @@ async function executeOne(
   return parsed;
 }
 
-export async function runCell(
-  sql: string,
-  instance: Instance,
-  options: RunOptions = {},
-): Promise<SqlResult> {
-  const statements = splitStatements(sql);
+export interface RunCellInput {
+  source: string;
+  cells: Cell[];
+  instance: Instance;
+}
+
+export async function runCell(input: RunCellInput, options: RunOptions = {}): Promise<SqlResult> {
+  const vars = collectVariables(input.cells);
+  const expansion = expandSql(input.source, vars);
+  if (expansion.undefined.length > 0) {
+    throw new UndefinedVariableError(expansion.undefined);
+  }
+
+  const statements = splitStatements(expansion.text);
   if (statements.length === 0) {
     throw new Error('Empty SQL');
   }
-  let last: SqlResult = {};
-  for (const stmt of statements) {
-    last = await executeOne(stmt, instance, options);
+
+  const controller = new AbortController();
+  const external = options.signal;
+  if (external) {
+    if (external.aborted) controller.abort(external.reason);
+    else external.addEventListener('abort', () => controller.abort(external.reason));
   }
-  return last;
+  const timeoutMs = options.timeoutMs ?? 30_000;
+  const timer = setTimeout(
+    () => controller.abort(new DOMException('Timeout', 'TimeoutError')),
+    timeoutMs,
+  );
+
+  const database = vars.DATABASE ?? 'test';
+
+  try {
+    let last: SqlResult = {};
+    for (const stmt of statements) {
+      last = await executeOne(stmt, input.instance, database, controller.signal);
+    }
+    return last;
+  } finally {
+    clearTimeout(timer);
+  }
 }

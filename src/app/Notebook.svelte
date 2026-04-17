@@ -1,11 +1,13 @@
 <script lang="ts">
   import {
     addCell,
-    getNotebook,
+    getActiveNotebook,
     moveCell,
     removeCell,
+    renameNotebook,
     updateCellSource,
   } from '../lib/state/notebook.svelte';
+  import { cancelAll, getRunner } from '../lib/state/runners';
   import type { Instance } from '../lib/instance/client';
   import MarkdownCell from './cells/MarkdownCell.svelte';
   import SqlCell from './cells/SqlCell.svelte';
@@ -16,60 +18,112 @@
   }
 
   let { instance }: Props = $props();
-  const notebook = $derived(getNotebook());
+  const notebook = $derived(getActiveNotebook());
+  let runningAll = $state(false);
+
+  async function runAll() {
+    if (runningAll || !notebook) return;
+    runningAll = true;
+    try {
+      for (const cell of notebook.cells) {
+        if (cell.type !== 'sql') continue;
+        const fn = getRunner(cell.id);
+        if (!fn) continue;
+        const ok = await fn();
+        if (!ok) break;
+      }
+    } finally {
+      runningAll = false;
+    }
+  }
+
+  function cancel() {
+    cancelAll();
+    runningAll = false;
+  }
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && runningAll) cancel();
+  }
 </script>
 
-<section class="notebook">
-  <h2 class="title">{notebook.title}</h2>
-  <div class="cells">
-    {#each notebook.cells as cell, idx (cell.id)}
-      <article class="cell-wrap cell-{cell.type}">
-        <header class="cell-header">
-          <span class="label">{cell.type}</span>
-          <div class="actions">
-            <button
-              type="button"
-              aria-label="Move up"
-              disabled={idx === 0}
-              onclick={() => moveCell(cell.id, -1)}>▲</button
-            >
-            <button
-              type="button"
-              aria-label="Move down"
-              disabled={idx === notebook.cells.length - 1}
-              onclick={() => moveCell(cell.id, 1)}>▼</button
-            >
-            <button
-              type="button"
-              aria-label="Delete cell"
-              class="danger"
-              onclick={() => removeCell(cell.id)}>×</button
-            >
-          </div>
-        </header>
-        {#if cell.type === 'markdown'}
-          <MarkdownCell source={cell.source} onChange={(next) => updateCellSource(cell.id, next)} />
-        {:else if cell.type === 'sql'}
-          <SqlCell
-            source={cell.source}
-            onChange={(next) => updateCellSource(cell.id, next)}
-            {instance}
-          />
-        {:else}
-          <EnvCell source={cell.source} onChange={(next) => updateCellSource(cell.id, next)} />
+<svelte:window onkeydown={handleKeydown} />
+
+{#if !notebook}
+  <p class="empty">No notebook selected.</p>
+{:else}
+  <section class="notebook">
+    <div class="title-row">
+      <input
+        class="title"
+        type="text"
+        value={notebook.title}
+        oninput={(e) => renameNotebook(notebook.id, (e.currentTarget as HTMLInputElement).value)}
+      />
+      <div class="top-actions">
+        <button type="button" class="run-all" disabled={runningAll || !instance} onclick={runAll}>
+          ▶▶ Run All
+        </button>
+        {#if runningAll}
+          <button type="button" class="cancel" onclick={cancel}>■ Cancel (Esc)</button>
         {/if}
-      </article>
-    {/each}
-  </div>
-  {#if notebook.cells.length === 0}
-    <p class="empty">This notebook has no cells yet.</p>
-  {/if}
-  <footer class="footer">
-    <button type="button" onclick={() => addCell('markdown')}>+ md</button>
-    <button type="button" onclick={() => addCell('sql')}>+ sql</button>
-    <button type="button" onclick={() => addCell('env')}>+ env</button>
-  </footer>
-</section>
+      </div>
+    </div>
+    <div class="cells">
+      {#each notebook.cells as cell, idx (cell.id)}
+        <article class="cell-wrap cell-{cell.type}">
+          <header class="cell-header">
+            <span class="label">{cell.type}</span>
+            <div class="actions">
+              <button
+                type="button"
+                aria-label="Move up"
+                disabled={idx === 0}
+                onclick={() => moveCell(cell.id, -1)}>▲</button
+              >
+              <button
+                type="button"
+                aria-label="Move down"
+                disabled={idx === notebook.cells.length - 1}
+                onclick={() => moveCell(cell.id, 1)}>▼</button
+              >
+              <button
+                type="button"
+                aria-label="Delete cell"
+                class="danger"
+                onclick={() => removeCell(cell.id)}>×</button
+              >
+            </div>
+          </header>
+          {#if cell.type === 'markdown'}
+            <MarkdownCell
+              source={cell.source}
+              onChange={(next) => updateCellSource(cell.id, next)}
+            />
+          {:else if cell.type === 'sql'}
+            <SqlCell
+              cellId={cell.id}
+              source={cell.source}
+              cells={notebook.cells}
+              onChange={(next) => updateCellSource(cell.id, next)}
+              {instance}
+            />
+          {:else}
+            <EnvCell source={cell.source} onChange={(next) => updateCellSource(cell.id, next)} />
+          {/if}
+        </article>
+      {/each}
+    </div>
+    {#if notebook.cells.length === 0}
+      <p class="empty">This notebook has no cells yet.</p>
+    {/if}
+    <footer class="footer">
+      <button type="button" onclick={() => addCell('markdown')}>+ md</button>
+      <button type="button" onclick={() => addCell('sql')}>+ sql</button>
+      <button type="button" onclick={() => addCell('env')}>+ env</button>
+    </footer>
+  </section>
+{/if}
 
 <style>
   .notebook {
@@ -77,11 +131,59 @@
     flex-direction: column;
     gap: 16px;
   }
+  .title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
   .title {
     font-size: 18px;
     font-weight: 600;
     color: #e2e8f0;
     margin: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 4px 8px;
+    min-width: 0;
+    flex: 1;
+  }
+  .title:focus {
+    outline: none;
+    border-color: #2e3350;
+    background: #22263a;
+  }
+  .top-actions {
+    display: flex;
+    gap: 6px;
+  }
+  .run-all {
+    background: #22263a;
+    color: #e2e8f0;
+    border: 1px solid #2e3350;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .run-all:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .run-all:hover:not(:disabled) {
+    background: #2e3350;
+  }
+  .cancel {
+    background: #5a1f1f;
+    color: #f87171;
+    border: 1px solid #f87171;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
   }
   .cells {
     display: flex;
