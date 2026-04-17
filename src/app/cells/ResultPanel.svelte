@@ -82,7 +82,7 @@
   {#if error}
     <div class="meta error">
       <strong>Error</strong>
-      <span>{error}</span>
+      <pre class="error-body">{error}</pre>
     </div>
   {:else if running && !result}
     <div class="meta"><span class="mini-spinner"></span> Running…</div>
@@ -166,9 +166,28 @@
   }
   .meta.error {
     color: #f87171;
+    align-items: flex-start;
+    flex-wrap: nowrap;
   }
   .meta.error strong {
     margin-right: 4px;
+    padding-top: 2px;
+    flex-shrink: 0;
+  }
+  .error-body {
+    margin: 0;
+    padding: 4px 6px;
+    background: #2a1414;
+    border: 1px solid #5a1f1f;
+    border-radius: 3px;
+    color: #f87171;
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 240px;
+    overflow: auto;
+    flex: 1;
   }
   .mini-spinner {
     width: 12px;

@@ -41,6 +41,34 @@ export class SqlFetchError extends Error {
   }
 }
 
+function extractMessage(body: unknown): string | null {
+  if (!body || typeof body !== 'object') return null;
+  const b = body as Record<string, unknown>;
+  if (typeof b.error === 'string' && b.error.trim()) return b.error;
+  if (typeof b.message === 'string' && b.message.trim()) return b.message;
+  if (typeof b.detail === 'string' && b.detail.trim()) return b.detail;
+  if (b.error && typeof b.error === 'object') {
+    const nested = b.error as Record<string, unknown>;
+    if (typeof nested.message === 'string' && nested.message.trim()) return nested.message;
+    if (typeof nested.detail === 'string' && nested.detail.trim()) return nested.detail;
+  }
+  if (Array.isArray(b.errors) && b.errors.length > 0) {
+    const first = b.errors[0];
+    if (first && typeof first === 'object') {
+      const msg = (first as Record<string, unknown>).message;
+      if (typeof msg === 'string' && msg.trim()) return msg;
+    } else if (typeof first === 'string' && first.trim()) {
+      return first;
+    }
+  }
+  return null;
+}
+
+function formatErrorWithStatus(message: string, status: number): string {
+  // If the caller already embedded the status, don't repeat it.
+  return /\b\d{3}\b/.test(message) ? message : `${message} (HTTP ${status})`;
+}
+
 async function executeOne(
   query: string,
   instance: Instance,
@@ -55,20 +83,31 @@ async function executeOne(
     signal,
   });
   const text = await res.text();
-  let parsed: SqlResult = {};
+  let parsed: unknown = null;
   try {
-    parsed = JSON.parse(text) as SqlResult;
+    parsed = text.length > 0 ? JSON.parse(text) : null;
   } catch {
-    throw new Error(`Non-JSON response (${res.status}): ${text.slice(0, 200)}`);
+    // Keep parsed as null — fall through to raw-text handling below.
   }
   if (!res.ok) {
-    const message = parsed.error ?? `SQL request failed (${res.status})`;
-    throw new SqlFetchError(message, res.status);
+    const extracted = extractMessage(parsed);
+    if (extracted) {
+      throw new SqlFetchError(formatErrorWithStatus(extracted, res.status), res.status);
+    }
+    const raw = text.trim();
+    if (raw) {
+      throw new SqlFetchError(formatErrorWithStatus(raw.slice(0, 800), res.status), res.status);
+    }
+    throw new SqlFetchError(`SQL request failed (HTTP ${res.status})`, res.status);
   }
-  if (parsed.error) {
-    throw new Error(parsed.error);
+  if (parsed && typeof parsed === 'object') {
+    const embeddedError = extractMessage(parsed);
+    if (embeddedError) {
+      throw new Error(embeddedError);
+    }
+    return parsed as SqlResult;
   }
-  return parsed;
+  throw new Error(`Unexpected empty response from SQL endpoint`);
 }
 
 export interface RunCellInput {
