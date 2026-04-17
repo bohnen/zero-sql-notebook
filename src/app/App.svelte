@@ -142,6 +142,11 @@
 {/if}
 
 <style>
+  :global(*),
+  :global(*::before),
+  :global(*::after) {
+    box-sizing: border-box;
+  }
   :global(html),
   :global(body) {
     margin: 0;
