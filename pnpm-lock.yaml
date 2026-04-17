@@ -29,6 +29,9 @@ importers:
       dompurify:
         specifier: ^3.4.0
         version: 3.4.0
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.2
       marked:
         specifier: ^18.0.0
         version: 18.0.0
@@ -2808,6 +2811,9 @@ packages:
   fetch-node-website@7.3.0:
     resolution: {integrity: sha512-/wayUHbdVUWrD72aqRNNrr6+MHnCkumZgNugN0RfiWJpbNJUdAkMk4Z18MGayGZVVqYXR1RWrV+bIFEt5HuBZg==, tarball: https://registry.npmjs.org/fetch-node-website/-/fetch-node-website-7.3.0.tgz}
     engines: {node: '>=14.18.0'}
+
+  fflate@0.8.2:
+    resolution: {integrity: sha512-cPJU47OaAoCbg0pBvzsgpTPhmhqI5eJjh/JIu8tPj5q+T7iLvW/JAYUqmE7KOB4R1ZyEhzBaIQpQpardBF5z8A==, tarball: https://registry.npmjs.org/fflate/-/fflate-0.8.2.tgz}
 
   figures@2.0.0:
     resolution: {integrity: sha512-Oa2M9atig69ZkfwiApY8F2Yy+tzMbazyvqv21R0NsSC8floSOC09BbT1ITWAdoMGQvJ/aZnR1KMwdx9tvHnTNA==, tarball: https://registry.npmjs.org/figures/-/figures-2.0.0.tgz}
@@ -8761,6 +8767,8 @@ snapshots:
       figures: 5.0.0
       got: 12.6.1
       is-plain-obj: 4.1.0
+
+  fflate@0.8.2: {}
 
   figures@2.0.0:
     dependencies:

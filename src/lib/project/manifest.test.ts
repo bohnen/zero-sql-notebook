@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseManifest } from './manifest';
+import { formatManifest, parseManifest } from './manifest';
 
 describe('parseManifest', () => {
   it('parses a title and a list of notebooks', () => {
@@ -47,5 +47,26 @@ describe('parseManifest', () => {
   it('rejects object-form notebook entries (not yet supported)', () => {
     const src = ['notebooks:', '  - file: welcome.md', '    title: Welcome'].join('\n');
     expect(() => parseManifest(src)).toThrow(/Object-form/);
+  });
+});
+
+describe('formatManifest round-trip', () => {
+  it('re-parses to the same structure', () => {
+    const original = {
+      title: 'Zero Notebook Demo',
+      notebooks: ['welcome.md', 'folder/file with space.md', 'exercises/a.md'],
+    };
+    const yaml = formatManifest(original);
+    expect(parseManifest(yaml)).toEqual(original);
+  });
+
+  it('emits title + notebooks in the expected order', () => {
+    const yaml = formatManifest({ title: 'x', notebooks: ['a.md'] });
+    expect(yaml).toBe('title: x\nnotebooks:\n  - a.md\n');
+  });
+
+  it('omits title when not provided', () => {
+    const yaml = formatManifest({ notebooks: ['a.md'] });
+    expect(yaml.startsWith('notebooks:')).toBe(true);
   });
 });
