@@ -112,6 +112,8 @@
             cellId={cell.id}
             source={cell.source}
             cells={notebook.cells}
+            cellIndex={idx}
+            notebookTitle={notebook.title}
             {readOnly}
             onChange={(next) => updateCellSource(cell.id, next)}
             {instance}

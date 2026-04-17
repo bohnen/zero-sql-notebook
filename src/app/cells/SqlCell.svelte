@@ -1,9 +1,16 @@
 <script lang="ts">
   import { codemirror } from '../../editor/codemirror';
-  import { runCell, UndefinedVariableError, type SqlResult } from '../../lib/execute/run';
+  import {
+    runCell,
+    SqlFetchError,
+    UndefinedVariableError,
+    type SqlResult,
+  } from '../../lib/execute/run';
   import type { Instance } from '../../lib/instance/client';
   import type { Cell } from '../../lib/notebook/types';
+  import { reprovisionInstance } from '../../lib/state/instance.svelte';
   import { registerController, registerRunner } from '../../lib/state/runners';
+  import { showToast } from '../../lib/state/toast.svelte';
   import ResultPanel from './ResultPanel.svelte';
 
   interface Props {
@@ -13,14 +20,29 @@
     onChange: (next: string) => void;
     instance: Instance | null;
     readOnly?: boolean;
+    cellIndex?: number;
+    notebookTitle?: string;
   }
 
-  let { cellId, source, cells, onChange, instance, readOnly = false }: Props = $props();
+  let {
+    cellId,
+    source,
+    cells,
+    onChange,
+    instance,
+    readOnly = false,
+    cellIndex = 0,
+    notebookTitle = 'notebook',
+  }: Props = $props();
 
   let running = $state(false);
   let result = $state<SqlResult | null>(null);
   let error = $state<string | null>(null);
   let elapsedMs = $state<number | null>(null);
+
+  async function runOnce(currentInstance: Instance, signal: AbortSignal): Promise<SqlResult> {
+    return runCell({ source, cells, instance: currentInstance }, { signal });
+  }
 
   async function run(): Promise<boolean> {
     if (!instance || running) return false;
@@ -32,10 +54,31 @@
     registerController(cellId, controller);
     const start = performance.now();
     try {
-      const r = await runCell({ source, cells, instance }, { signal: controller.signal });
-      elapsedMs = Math.round(performance.now() - start);
-      result = r;
-      return true;
+      let currentInstance = instance;
+      let retried = false;
+      while (true) {
+        try {
+          const r = await runOnce(currentInstance, controller.signal);
+          elapsedMs = Math.round(performance.now() - start);
+          result = r;
+          return true;
+        } catch (err) {
+          if (
+            !retried &&
+            err instanceof SqlFetchError &&
+            (err.status === 401 || err.status === 403)
+          ) {
+            retried = true;
+            showToast({
+              message: 'Instance looks expired. Reprovisioning…',
+              durationMs: 3000,
+            });
+            currentInstance = await reprovisionInstance();
+            continue;
+          }
+          throw err;
+        }
+      }
     } catch (err) {
       elapsedMs = Math.round(performance.now() - start);
       if (err instanceof UndefinedVariableError) {
@@ -46,6 +89,8 @@
         error = 'Cancelled';
       } else if (err instanceof DOMException && err.name === 'TimeoutError') {
         error = 'Timed out';
+      } else if (err instanceof SqlFetchError && (err.status === 401 || err.status === 403)) {
+        error = `${err.message}\nClick the connection badge → Reprovision to recover.`;
       } else {
         error = err instanceof Error ? err.message : String(err);
       }
@@ -76,7 +121,7 @@
   </div>
   <div class="editor" use:codemirror={{ doc: source, onChange, onRun: run, readOnly }}></div>
   {#if result !== null || error !== null || running}
-    <ResultPanel {result} {elapsedMs} {error} {running} />
+    <ResultPanel {result} {elapsedMs} {error} {running} {cellIndex} {notebookTitle} />
   {/if}
 </div>
 

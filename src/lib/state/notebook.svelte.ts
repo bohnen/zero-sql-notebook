@@ -2,6 +2,7 @@ import type { Cell, CellType, Notebook } from '../notebook/types';
 import { newId } from '../notebook/ids';
 import { createInitialNotebook } from '../notebook/seed';
 import { loadNotebooks, scheduleSave } from '../storage/store';
+import { showToast } from './toast.svelte';
 
 const ACTIVE_ID_KEY = 'active-notebook-id-v1';
 
@@ -73,7 +74,24 @@ export function addCell(type: CellType): void {
 }
 
 export function removeCell(cellId: string): void {
+  const notebookId = activeId;
+  const current = notebookId ? notebooks[notebookId] : null;
+  if (!current) return;
+  const idx = current.cells.findIndex((c) => c.id === cellId);
+  if (idx === -1) return;
+  const removed = current.cells[idx];
   updateActive((n) => ({ ...n, cells: n.cells.filter((c) => c.id !== cellId) }));
+  showToast({
+    message: `Cell removed`,
+    undo: () => {
+      const nb = notebookId ? notebooks[notebookId] : null;
+      if (!nb) return;
+      if (nb.cells.some((c) => c.id === removed.id)) return;
+      const next = [...nb.cells];
+      next.splice(Math.min(idx, next.length), 0, removed);
+      notebooks = { ...notebooks, [nb.id]: touch({ ...nb, cells: next }) };
+    },
+  });
 }
 
 export function moveCell(cellId: string, direction: -1 | 1): void {

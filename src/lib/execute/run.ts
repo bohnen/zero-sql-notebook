@@ -32,6 +32,15 @@ export class UndefinedVariableError extends Error {
   }
 }
 
+export class SqlFetchError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'SqlFetchError';
+    this.status = status;
+  }
+}
+
 async function executeOne(
   query: string,
   instance: Instance,
@@ -54,7 +63,7 @@ async function executeOne(
   }
   if (!res.ok) {
     const message = parsed.error ?? `SQL request failed (${res.status})`;
-    throw new Error(message);
+    throw new SqlFetchError(message, res.status);
   }
   if (parsed.error) {
     throw new Error(parsed.error);

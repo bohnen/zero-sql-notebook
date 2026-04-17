@@ -1,28 +1,37 @@
 <script lang="ts">
+  import ConnectionModal from './ConnectionModal.svelte';
+  import InstanceBadge from './InstanceBadge.svelte';
   import Notebook from './Notebook.svelte';
   import NotebookToolbar from './NotebookToolbar.svelte';
   import SharedNotebookToolbar from './SharedNotebookToolbar.svelte';
   import Sidebar from './Sidebar.svelte';
   import Splash from './Splash.svelte';
-  import { getInstance, type Instance } from '../lib/instance/client';
+  import UndoToast from './UndoToast.svelte';
   import { getActiveNotebook } from '../lib/state/notebook.svelte';
   import { clearShared, getShared, setShared } from '../lib/state/share.svelte';
+  import {
+    ensureInstance,
+    getCurrentInstance,
+    reprovisionInstance,
+  } from '../lib/state/instance.svelte';
   import { handleCallbackIfPresent } from '../lib/auth/github.svelte';
   import { loadSharedGist, shareNotebook } from '../lib/share/share';
 
-  type Phase =
-    | { kind: 'provisioning' }
-    | { kind: 'ready'; instance: Instance }
-    | { kind: 'error'; message: string };
+  type Phase = { kind: 'provisioning' } | { kind: 'ready' } | { kind: 'error'; message: string };
 
   let phase = $state<Phase>({ kind: 'provisioning' });
   let pendingShareError = $state<string | null>(null);
+  let showConnection = $state(false);
 
   async function provision(force = false) {
     phase = { kind: 'provisioning' };
     try {
-      const instance = await getInstance(force);
-      phase = { kind: 'ready', instance };
+      if (force) {
+        await reprovisionInstance();
+      } else {
+        await ensureInstance();
+      }
+      phase = { kind: 'ready' };
     } catch (err) {
       phase = { kind: 'error', message: err instanceof Error ? err.message : String(err) };
     }
@@ -65,6 +74,7 @@
 
   const shared = $derived(getShared());
   const activeNotebook = $derived(getActiveNotebook());
+  const instance = $derived(getCurrentInstance());
 </script>
 
 {#if phase.kind === 'provisioning'}
@@ -77,22 +87,25 @@
     <main>
       <header>
         <h1>Zero Notebook</h1>
-        {#if pendingShareError}
-          <div class="banner error">
-            {pendingShareError}
-            <button type="button" onclick={() => (pendingShareError = null)}>×</button>
-          </div>
+        {#if instance}
+          <InstanceBadge {instance} onOpen={() => (showConnection = true)} />
         {/if}
       </header>
+      {#if pendingShareError}
+        <div class="banner error">
+          {pendingShareError}
+          <button type="button" onclick={() => (pendingShareError = null)}>×</button>
+        </div>
+      {/if}
       <div class="body">
         {#if shared}
-          <Notebook notebook={shared.notebook} instance={phase.instance} readOnly>
+          <Notebook notebook={shared.notebook} {instance} readOnly>
             {#snippet toolbarExtras()}
               <SharedNotebookToolbar notebook={shared.notebook} onClose={() => clearShared()} />
             {/snippet}
           </Notebook>
         {:else if activeNotebook}
-          <Notebook notebook={activeNotebook} instance={phase.instance}>
+          <Notebook notebook={activeNotebook} {instance}>
             {#snippet toolbarExtras()}
               <NotebookToolbar notebook={activeNotebook} />
             {/snippet}
@@ -103,6 +116,14 @@
       </div>
     </main>
   </div>
+  {#if showConnection && instance}
+    <ConnectionModal
+      {instance}
+      onClose={() => (showConnection = false)}
+      onReprovisioned={() => (showConnection = false)}
+    />
+  {/if}
+  <UndoToast />
 {/if}
 
 <style>
@@ -127,10 +148,14 @@
     overflow: hidden;
   }
   header {
-    padding: 14px 24px;
+    padding: 10px 24px;
     border-bottom: 1px solid #2e3350;
     background: #1a1d27;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
   }
   header h1 {
     margin: 0;
@@ -143,7 +168,7 @@
     padding: 24px;
   }
   .banner {
-    margin-top: 8px;
+    margin: 8px 24px 0;
     padding: 6px 10px;
     border-radius: 4px;
     font-size: 12px;
