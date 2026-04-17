@@ -1,0 +1,11 @@
+node_modules
+dist
+.netlify
+.omc
+.playwright-mcp
+ref/
+.DS_Store
+*.log
+.env
+.env.local
+.vite

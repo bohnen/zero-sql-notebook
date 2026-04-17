@@ -1,0 +1,8 @@
+dist
+node_modules
+.netlify
+.omc
+.playwright-mcp
+ref
+pnpm-lock.yaml
+*.md
