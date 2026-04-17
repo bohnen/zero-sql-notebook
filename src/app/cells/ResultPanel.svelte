@@ -107,6 +107,9 @@
       {:else if result.rowsAffected != null}
         <span>·</span>
         <span>{result.rowsAffected} rows affected</span>
+      {:else}
+        <span>·</span>
+        <span>ok</span>
       {/if}
     </div>
     {#if hasRows}
@@ -144,6 +147,8 @@
           <code>LIMIT</code> or use <strong>CSV</strong> to export all {totalRows.toLocaleString()} rows.
         </div>
       {/if}
+    {:else}
+      <pre class="raw-output">{JSON.stringify(result, null, 2)}</pre>
     {/if}
   {/if}
 </div>
@@ -282,5 +287,20 @@
     background: #1a1d27;
     padding: 1px 4px;
     border-radius: 3px;
+  }
+  .raw-output {
+    margin: 8px 0 0;
+    padding: 8px 10px;
+    background: #191c2a;
+    border: 1px solid #22263a;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #e2e8f0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 360px;
+    overflow: auto;
   }
 </style>

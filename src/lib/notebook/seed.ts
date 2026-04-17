@@ -5,14 +5,17 @@ import { parseMarkdown } from './parse';
 const WELCOME_SRC = [
   '# Welcome to Zero Notebook',
   '',
+  'Define variables in the env cell and reference them with `${VAR}` in SQL cells.',
+  '',
+  '```env',
+  '# DATABASE = test',
+  '# TBL = information_schema.tables',
+  '```',
+  '',
   'Click ▶ Run on the SQL cell below (or press Cmd/Ctrl+Enter).',
   '',
   '```sql',
   'SELECT 1 AS hello;',
-  '```',
-  '',
-  '```env',
-  '# Variables are not wired up yet (M1).',
   '```',
 ].join('\n');
 

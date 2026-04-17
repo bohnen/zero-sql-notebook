@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getAuth, logout } from '../lib/auth/github.svelte';
+  import { downloadNotebookMarkdown } from '../lib/io/md';
   import type { Notebook } from '../lib/notebook/types';
   import { setGistId } from '../lib/state/notebook.svelte';
   import { shareNotebook } from '../lib/share/share';
@@ -31,6 +32,13 @@
 </script>
 
 <div class="toolbar">
+  <button
+    type="button"
+    onclick={() => downloadNotebookMarkdown(notebook)}
+    title="Download as Markdown"
+  >
+    Export .md
+  </button>
   {#if auth}
     <button
       type="button"
