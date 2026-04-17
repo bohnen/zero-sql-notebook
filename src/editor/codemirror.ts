@@ -1,4 +1,4 @@
-import { EditorState, Compartment } from '@codemirror/state';
+import { EditorState, Compartment, Prec } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { sql } from '@codemirror/lang-sql';
@@ -15,15 +15,20 @@ export function codemirror(node: HTMLElement, args: CodemirrorActionArgs) {
   let current = args;
   const readOnlyCompartment = new Compartment();
 
-  const runKeymap = keymap.of([
-    {
-      key: 'Mod-Enter',
-      run: () => {
-        current.onRun?.();
-        return true;
+  // Give Mod-Enter the highest precedence so it wins over defaultKeymap's
+  // "insertBlankLine" binding and fires our onRun handler.
+  const runKeymap = Prec.highest(
+    keymap.of([
+      {
+        key: 'Mod-Enter',
+        preventDefault: true,
+        run: () => {
+          current.onRun?.();
+          return true;
+        },
       },
-    },
-  ]);
+    ]),
+  );
 
   const updateListener = EditorView.updateListener.of((update) => {
     if (update.docChanged) {

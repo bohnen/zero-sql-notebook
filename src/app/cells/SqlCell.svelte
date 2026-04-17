@@ -109,17 +109,6 @@
 </script>
 
 <div class="sql-cell">
-  <div class="toolbar">
-    <button
-      type="button"
-      class="run"
-      disabled={execState.running || !instance}
-      onclick={run}
-      title="Run (Cmd/Ctrl+Enter)"
-    >
-      {execState.running ? '…' : '▶'} Run
-    </button>
-  </div>
   <div class="editor" use:codemirror={{ doc: source, onChange, onRun: run, readOnly }}></div>
   {#if execState.result !== null || execState.error !== null || execState.running}
     <ResultPanel
@@ -138,24 +127,6 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-  }
-  .toolbar {
-    display: flex;
-    justify-content: flex-end;
-  }
-  .run {
-    background: #f76e3c;
-    color: #fff;
-    border: none;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 600;
-    padding: 4px 12px;
-    cursor: pointer;
-  }
-  .run:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
   }
   .editor {
     border: 1px solid #2e3350;

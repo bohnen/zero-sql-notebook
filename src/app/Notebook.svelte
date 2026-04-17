@@ -7,6 +7,7 @@
     updateCellSource,
   } from '../lib/state/notebook.svelte';
   import { cancelAll, getRunner } from '../lib/state/runners';
+  import { getCellExecution } from '../lib/state/results.svelte';
   import type { Instance } from '../lib/instance/client';
   import type { Notebook } from '../lib/notebook/types';
   import MarkdownCell from './cells/MarkdownCell.svelte';
@@ -78,28 +79,41 @@
       <article class="cell-wrap cell-{cell.type}">
         <header class="cell-header">
           <span class="label">{cell.type}</span>
-          {#if !readOnly}
-            <div class="actions">
+          <div class="header-right">
+            {#if cell.type === 'sql'}
               <button
                 type="button"
-                aria-label="Move up"
-                disabled={idx === 0}
-                onclick={() => moveCell(cell.id, -1)}>▲</button
+                class="run"
+                disabled={!instance || getCellExecution(cell.id).running}
+                onclick={() => getRunner(cell.id)?.()}
+                title="Run (Cmd/Ctrl+Enter)"
               >
-              <button
-                type="button"
-                aria-label="Move down"
-                disabled={idx === notebook.cells.length - 1}
-                onclick={() => moveCell(cell.id, 1)}>▼</button
-              >
-              <button
-                type="button"
-                aria-label="Delete cell"
-                class="danger"
-                onclick={() => removeCell(cell.id)}>×</button
-              >
-            </div>
-          {/if}
+                {getCellExecution(cell.id).running ? '…' : '▶'} Run
+              </button>
+            {/if}
+            {#if !readOnly}
+              <div class="actions">
+                <button
+                  type="button"
+                  aria-label="Move up"
+                  disabled={idx === 0}
+                  onclick={() => moveCell(cell.id, -1)}>▲</button
+                >
+                <button
+                  type="button"
+                  aria-label="Move down"
+                  disabled={idx === notebook.cells.length - 1}
+                  onclick={() => moveCell(cell.id, 1)}>▼</button
+                >
+                <button
+                  type="button"
+                  aria-label="Delete cell"
+                  class="danger"
+                  onclick={() => removeCell(cell.id)}>×</button
+                >
+              </div>
+            {/if}
+          </div>
         </header>
         {#if cell.type === 'markdown'}
           <MarkdownCell
@@ -231,6 +245,25 @@
   }
   .cell-env .label {
     color: #a78bfa;
+  }
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .run {
+    background: #f76e3c;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    cursor: pointer;
+  }
+  .run:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
   .actions {
     display: flex;
