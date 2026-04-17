@@ -1,14 +1,15 @@
 <script lang="ts">
   import { codemirror } from '../../editor/codemirror';
-  import {
-    runCell,
-    SqlFetchError,
-    UndefinedVariableError,
-    type SqlResult,
-  } from '../../lib/execute/run';
+  import { runCell, SqlFetchError, UndefinedVariableError } from '../../lib/execute/run';
+  import type { SqlResult } from '../../lib/execute/run';
   import type { Instance } from '../../lib/instance/client';
   import type { Cell } from '../../lib/notebook/types';
   import { reprovisionInstance } from '../../lib/state/instance.svelte';
+  import {
+    getCellExecution,
+    patchCellExecution,
+    resetCellExecution,
+  } from '../../lib/state/results.svelte';
   import { registerController, registerRunner } from '../../lib/state/runners';
   import { showToast } from '../../lib/state/toast.svelte';
   import ResultPanel from './ResultPanel.svelte';
@@ -35,21 +36,15 @@
     notebookTitle = 'notebook',
   }: Props = $props();
 
-  let running = $state(false);
-  let result = $state<SqlResult | null>(null);
-  let error = $state<string | null>(null);
-  let elapsedMs = $state<number | null>(null);
+  const execState = $derived(getCellExecution(cellId));
 
   async function runOnce(currentInstance: Instance, signal: AbortSignal): Promise<SqlResult> {
     return runCell({ source, cells, instance: currentInstance }, { signal });
   }
 
   async function run(): Promise<boolean> {
-    if (!instance || running) return false;
-    running = true;
-    error = null;
-    result = null;
-    elapsedMs = null;
+    if (!instance || execState.running) return false;
+    resetCellExecution(cellId);
     const controller = new AbortController();
     registerController(cellId, controller);
     const start = performance.now();
@@ -59,8 +54,10 @@
       while (true) {
         try {
           const r = await runOnce(currentInstance, controller.signal);
-          elapsedMs = Math.round(performance.now() - start);
-          result = r;
+          patchCellExecution(cellId, {
+            result: r,
+            elapsedMs: Math.round(performance.now() - start),
+          });
           return true;
         } catch (err) {
           if (
@@ -80,23 +77,27 @@
         }
       }
     } catch (err) {
-      elapsedMs = Math.round(performance.now() - start);
+      let message: string;
       if (err instanceof UndefinedVariableError) {
-        error = err.refs
+        message = err.refs
           .map((r) => `Undefined variable \${${r.name}} at line ${r.line}, col ${r.col}`)
           .join('\n');
       } else if (err instanceof DOMException && err.name === 'AbortError') {
-        error = 'Cancelled';
+        message = 'Cancelled';
       } else if (err instanceof DOMException && err.name === 'TimeoutError') {
-        error = 'Timed out';
+        message = 'Timed out';
       } else if (err instanceof SqlFetchError && (err.status === 401 || err.status === 403)) {
-        error = `${err.message}\nClick the connection badge → Reprovision to recover.`;
+        message = `${err.message}\nClick the connection badge → Reprovision to recover.`;
       } else {
-        error = err instanceof Error ? err.message : String(err);
+        message = err instanceof Error ? err.message : String(err);
       }
+      patchCellExecution(cellId, {
+        error: message,
+        elapsedMs: Math.round(performance.now() - start),
+      });
       return false;
     } finally {
-      running = false;
+      patchCellExecution(cellId, { running: false });
       registerController(cellId, null);
     }
   }
@@ -112,16 +113,23 @@
     <button
       type="button"
       class="run"
-      disabled={running || !instance}
+      disabled={execState.running || !instance}
       onclick={run}
       title="Run (Cmd/Ctrl+Enter)"
     >
-      {running ? '…' : '▶'} Run
+      {execState.running ? '…' : '▶'} Run
     </button>
   </div>
   <div class="editor" use:codemirror={{ doc: source, onChange, onRun: run, readOnly }}></div>
-  {#if result !== null || error !== null || running}
-    <ResultPanel {result} {elapsedMs} {error} {running} {cellIndex} {notebookTitle} />
+  {#if execState.result !== null || execState.error !== null || execState.running}
+    <ResultPanel
+      result={execState.result}
+      elapsedMs={execState.elapsedMs}
+      error={execState.error}
+      running={execState.running}
+      {cellIndex}
+      {notebookTitle}
+    />
   {/if}
 </div>
 
