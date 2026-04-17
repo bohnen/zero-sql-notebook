@@ -14,6 +14,7 @@
     getCurrentInstance,
     reprovisionInstance,
   } from '../lib/state/instance.svelte';
+  import { isSidebarCollapsed, toggleSidebar } from '../lib/state/ui.svelte';
   import { handleCallbackIfPresent } from '../lib/auth/github.svelte';
   import { loadSharedGist, shareNotebook } from '../lib/share/share';
 
@@ -75,6 +76,7 @@
   const shared = $derived(getShared());
   const activeNotebook = $derived(getActiveNotebook());
   const instance = $derived(getCurrentInstance());
+  const sidebarCollapsed = $derived(isSidebarCollapsed());
 </script>
 
 {#if phase.kind === 'provisioning'}
@@ -83,10 +85,23 @@
   <Splash status="error" message={phase.message} onRetry={() => provision(true)} />
 {:else}
   <div class="layout">
-    <Sidebar />
+    {#if !sidebarCollapsed}
+      <Sidebar />
+    {/if}
     <main>
       <header>
-        <h1>Zero Notebook</h1>
+        <div class="head-left">
+          <button
+            type="button"
+            class="toggle"
+            onclick={toggleSidebar}
+            aria-label={sidebarCollapsed ? 'Show notebooks' : 'Hide notebooks'}
+            title={sidebarCollapsed ? 'Show notebooks' : 'Hide notebooks'}
+          >
+            {#if sidebarCollapsed}☰{:else}⟨{/if}
+          </button>
+          <h1>Zero Notebook</h1>
+        </div>
         {#if instance}
           <InstanceBadge {instance} onOpen={() => (showConnection = true)} />
         {/if}
@@ -156,6 +171,24 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+  }
+  .head-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .toggle {
+    background: #22263a;
+    color: #e2e8f0;
+    border: 1px solid #2e3350;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 14px;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .toggle:hover {
+    background: #2e3350;
   }
   header h1 {
     margin: 0;
