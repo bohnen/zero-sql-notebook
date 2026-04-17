@@ -2,51 +2,108 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Status
+## What this is
 
-This repository is **pre-implementation**: it currently contains only a specification draft (`spec_draft.md`, written in Japanese) and a reference implementation under `ref/`. No application code, `package.json`, or build system has been created yet. The first implementation work will bootstrap the project from scratch, using the reference as a starting point.
+A Jupyter-style **SQL notebook** SPA that executes against [TiDB Cloud Zero](https://zero.tidbapi.com). Markdown is the on-disk format; SQL lives in ` ```sql ` fences, per-notebook variables in ` ```env ` fences. Deployed as a static Netlify site with a handful of Netlify Functions for the proxies that must hide a secret or dodge CORS.
 
-## Product Goal (from `spec_draft.md`)
+M1〜M5 are merged; the spec (`spec.md`, Japanese) stays authoritative for invariants. The pre-implementation reference lives at `ref/tidb-cloud-zero-browser/` and is **not tracked** (`.gitignore`); treat it as read-only source material.
 
-A Jupyter-style **SQL notebook** that renders Markdown and executes SQL code blocks against [TiDB Cloud Zero](https://zero.tidbapi.com), deployed as a static Netlify site (SPA, no backend beyond Netlify Functions). Key invariants from the spec:
+## Dev loop
 
-- **Notebook file format is Markdown.** SQL lives in ` ```sql ` fenced blocks; variables live in ` ```env ` fenced blocks (`KEY=VALUE` lines). Variables are expanded into SQL via `${VAR}` **client-side before execution** and are notebook-global.
-- **Storage is browser-local.** Notebooks persist to `localStorage`. Import paths: Markdown file upload, or GitHub Gist URL. Sharing path: create a Gist (via the user's GitHub OAuth), then load via `?gist_id=…` query param — reading a shared notebook requires no auth.
-- **TiDB Cloud Zero lifecycle is automatic.** On first run, if no connection info is in `localStorage`, provision a new instance; cache the connection string + `expiresAt`; reprovision automatically when expired. Instances have a 30-day TTL.
-- Keep the UI intentionally minimal — per the spec, do not add rich features beyond SQL editing and execution.
+Package manager is **pnpm** (`packageManager: pnpm@10.33.0`). Node `>= 18`.
 
-## Reference Implementation: `ref/tidb-cloud-zero-browser/`
+| 目的 | コマンド |
+| --- | --- |
+| 開発サーバ起動 (Netlify + Vite) | `pnpm dev` → `http://localhost:8888` |
+| 型チェック | `pnpm typecheck` (svelte-check) |
+| Lint + format check | `pnpm lint` |
+| フォーマット適用 | `pnpm format` |
+| ユニットテスト | `pnpm test` (vitest) |
+| 本番ビルド | `pnpm build` (`typecheck && vite build`) |
 
-A working single-page TiDB Cloud Zero SQL editor (not a notebook). Treat it as the canonical source for **how to talk to TiDB Cloud Zero** — the same API wiring will be reused by the notebook. It is a separate git submodule/clone and should not be edited as part of notebook work.
+前 commit に `pnpm lint && pnpm test && pnpm build` を通す。
 
-### Architecture at a glance
+## Branch + PR workflow (required)
+
+`main` は production。直接 push しない — Netlify が自動で production にデプロイしてしまうので、**feature ブランチ → PR → Deploy Preview 確認 → merge** の順で進める。
+
+```sh
+# 作業開始
+git checkout -b feat/<short-description>
+
+# 編集 → commit
+# ...
+
+# push & PR
+git push -u origin feat/<short-description>
+gh pr create --fill      # or --title/--body
+
+# CI/Deploy Preview で確認してから merge
+gh pr merge --squash
+
+# 同期
+git checkout main && git pull --ff-only
+```
+
+PR を開くと `.github/PULL_REQUEST_TEMPLATE.md` が本文に入る。タグ (`m6`, `m7` …) は **merge 後の main HEAD** に打つ。
+
+### Deploy Preview と GitHub OAuth の落とし穴
+
+Deploy Preview URL は `https://deploy-preview-<n>--<site>.netlify.app/` と毎回変わる。GitHub OAuth App は callback URL を 1 件しか持てないため、preview では **Gist Share / Update / ログイン系は動かない**。preview で確認するのは UI・SQL 実行・プロジェクト取り込みまで。Gist 周りの回帰は production(merge 後)か `pnpm dev` で確認する。
+
+## Architecture (M5 時点)
 
 ```
-Browser (index.html, vanilla JS, no bundler)
+ Browser (Svelte 5 + CodeMirror 6, Vite build → /dist)
    │
-   ├── POST /api/instance   ──► Netlify Function  ──► POST https://zero.tidbapi.com/v1alpha1/instances
-   │   (provision / fetch cached TiDB instance)       returns { connectionString, expiresAt }
+   ├── /api/instance           TiDB Zero instance provision/cache
+   ├── /api/sql                SQL proxy (Basic auth 組立)
+   ├── /api/oauth/config       公開 client_id を返す
+   ├── /api/oauth/token        code → access_token 交換 (client_secret をサーバ隠蔽)
    │
-   └── POST /api/sql        ──► Netlify Function  ──► POST https://http-<host>/v1beta/sql
-       { host, username, password, database, query }  (Basic auth, TiDB-Database header)
+   ├── api.github.com (direct)            Gist CRUD / repo contents
+   └── raw.githubusercontent.com (direct) project notebook 本体取得
 ```
 
-### Key mechanics worth knowing
+クライアントは 4 種類の runes ストアに状態を分散:
+- `src/lib/state/notebook.svelte.ts` — 複数ノートブックと順序 (`notebook-order-v1`)
+- `src/lib/state/results.svelte.ts` — 実行結果(セッション内メモリ、永続化しない)
+- `src/lib/state/instance.svelte.ts` — TiDB インスタンス状態
+- `src/lib/state/project.svelte.ts` — GitHub プロジェクト読込中の状態
+- `src/lib/state/share.svelte.ts` — `?gist_id=` で開いた読取専用共有
+- `src/lib/state/ui.svelte.ts` — サイドバー折畳等の UI prefs
+- `src/lib/state/runners.ts` / `toast.svelte.ts` — run 登録と Undo toast
 
-- **Two-layer instance cache.** The client caches `{ connectionString, expiresAt }` in `localStorage` under `tidb-zero-instance-v1` (L1). The `/api/instance` function *also* keeps a module-level `cached` variable (L2) that survives across warm Netlify invocations. Both layers evict when less than 5 minutes remain (`isExpired` in `api/instance.js` and `netlify/functions/instance.mjs`). `POST /api/instance` with `{ force: true }` bypasses and re-provisions.
-- **Two function runtimes present.** `api/*.js` uses the Vercel-style `(req, res)` handler signature; `netlify/functions/*.mjs` uses the Netlify Edge `(req) => Response` signature with an explicit `export const config = { path: "/api/..." }`. The Netlify build (`netlify.toml` → `functions = "netlify/functions"`) is the one actually deployed — the `api/` copies exist for parity with a Vercel-style deploy. **Keep the two in sync if you modify one.**
-- **SQL endpoint expects the host stripped of protocol.** `parseConnectionString` in `index.html` turns a TiDB Cloud Zero connection URL into `{ host, username, password, database }`, and the function reconstructs the upstream URL as `https://http-${host}/v1beta/sql`.
-- **Statement splitting is client-side and naive.** `splitStatements` in `index.html` strips `--` comments and splits on `;`. Multi-statement runs are sequenced with `runMultiple`, and only the last result is rendered as a table.
-- **No CORS on the upstream API** is assumed — all TiDB traffic goes through the Netlify function, never direct from the browser.
-- **Deploy config** (`netlify.toml`) publishes the repo root as-is and sets permissive CORS headers. There is no build step.
+## 主要な再利用ポイント
 
-## Likely First Steps When Implementing
+- Markdown パース/シリアライズ: `src/lib/notebook/parse.ts` / `serialize.ts` / `frontmatter.ts`(`title` + `gist_id` のみ)
+- SQL 実行: `src/lib/execute/run.ts`(`runCell`、401/403 の 1 回自動リトライあり)と `split.ts`(素朴な `;` 分割)
+- 変数展開: `src/lib/env/parse.ts` + `expand.ts`(文書順・後勝ち、未定義はクライアント側エラー)
+- 結果出力: `src/lib/result/export.ts`(CSV RFC 4180 / Markdown テーブル / 1,000 行制限)
+- Gist: `src/lib/gist/client.ts`(secret gist デフォルト)
+- GitHub project: `src/lib/project/github.ts` + `manifest.ts`(`project.yaml` は title + notebooks 配列のみ)
+- Svelte action: `src/editor/codemirror.ts`(Mod-Enter は `Prec.highest` で奪う)、`src/editor/autosize.ts`(textarea 自動拡縮)
 
-1. Decide whether to start from a copy of `ref/tidb-cloud-zero-browser/` or build fresh. The `/api/instance` and `/api/sql` functions are directly reusable — the notebook's new surface area is the Markdown editor, block-level run buttons, env-block variable substitution, localStorage notebook CRUD, and Gist import/export + OAuth.
-2. When adding a build system or framework, update this file with the actual `build`/`dev`/`test` commands — right now there are none to document.
-3. The spec targets Netlify; keep the `netlify/functions/*.mjs` runtime as the source of truth and drop `api/*.js` unless a Vercel deploy is also planned.
+## Non-obvious conventions
 
-## Non-Obvious Conventions
+- **UI コピーは日本語**。spec / 既存メッセージを踏襲。コード識別子とコメントは英語。
+- **実行結果は永続化しない**(spec §1.2)。runes ストアはセッション内のみでリロードで消える。localStorage にも Markdown にも書き戻さない。
+- **CodeMirror の `Mod-Enter` は `Prec.highest` 必須**。デフォルトの `insertBlankLine` に奪われる。
+- **box-sizing: border-box** をグローバル適用済。新しい input/textarea を書くときは `width:100%` + padding が安全に効く。
+- **Co-Authored-By トレーラの注意**: Netlify が private repo で「複数 contributor」を検知すると build が止まる。repo が private のまま Claude を co-author に入れる場合はプラン or repo を public にする。
+- **CSP の connect-src**: `api.github.com` と `raw.githubusercontent.com` は許可済。新しい upstream を追加するときは `netlify.toml` の CSP 更新を忘れない。
 
-- The spec document and most in-repo prose are **Japanese**. Preserve Japanese in user-facing copy unless the user asks otherwise; code identifiers and comments in the reference are English.
-- The target deploy URL referenced in the spec is `https://sql-notebook.netlify.app/` (shared-notebook links use this origin with `?gist_id=…`).
+## Common operations
+
+- M5 の動作確認用 public repo: `https://github.com/tadapin/zero-notebook-example`
+  - `http://localhost:8888/?github=tadapin/zero-notebook-example` で開ける
+- Netlify CLI からデプロイ(ほぼ不要、PR 経由で良い): `pnpm exec netlify deploy --build [--prod]`
+- スモークドキュメント: `docs/m1-smoke.md` 〜 `docs/m5-smoke.md`(機能別に項目一覧)
+
+## What NOT to do
+
+- `main` に直接 push(production を触ってしまう)
+- `ref/` を編集(別クローン扱い)
+- Markdown / localStorage に実行結果を書き戻す(spec 非スコープ)
+- `api/*.js`(Vercel 互換版)を復活させる — Netlify Functions (`.mjs`) 一本で運用
+- CodeMirror のラッパライブラリ(`svelte-codemirror-editor` 等)へ乗り換える — vanilla action で直接持ったほうが HMR / 状態管理が素直
