@@ -3,12 +3,15 @@
   import InstanceBadge from './InstanceBadge.svelte';
   import Notebook from './Notebook.svelte';
   import NotebookToolbar from './NotebookToolbar.svelte';
+  import ProjectToolbar from './ProjectToolbar.svelte';
   import SharedNotebookToolbar from './SharedNotebookToolbar.svelte';
   import Sidebar from './Sidebar.svelte';
   import Splash from './Splash.svelte';
   import UndoToast from './UndoToast.svelte';
   import { getActiveNotebook } from '../lib/state/notebook.svelte';
   import { clearShared, getShared, setShared } from '../lib/state/share.svelte';
+  import { getActiveProjectIndex, getProject, setProject } from '../lib/state/project.svelte';
+  import { loadProject, parseGithubParam } from '../lib/project/github';
   import {
     ensureInstance,
     getCurrentInstance,
@@ -17,6 +20,7 @@
   import { isSidebarCollapsed, toggleSidebar } from '../lib/state/ui.svelte';
   import { handleCallbackIfPresent } from '../lib/auth/github.svelte';
   import { loadSharedGist, shareNotebook } from '../lib/share/share';
+  import type { Notebook as NotebookType } from '../lib/notebook/types';
 
   type Phase = { kind: 'provisioning' } | { kind: 'ready' } | { kind: 'error'; message: string };
 
@@ -67,13 +71,48 @@
     }
   }
 
+  async function maybeLoadProject(): Promise<void> {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get('github');
+    if (!raw) return;
+    const target = parseGithubParam(raw);
+    if (!target) {
+      pendingShareError = `Invalid ?github= value: ${raw}`;
+      return;
+    }
+    try {
+      const loaded = await loadProject(target);
+      if (loaded.notebooks.length === 0) {
+        pendingShareError = 'Project contains no .md notebooks';
+        return;
+      }
+      setProject(loaded);
+    } catch (err) {
+      pendingShareError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
   void (async () => {
     await handleOAuthCallback();
-    await maybeLoadSharedGist();
+    await maybeLoadProject();
+    if (!getProject()) await maybeLoadSharedGist();
     await provision();
   })();
 
   const shared = $derived(getShared());
+  const project = $derived(getProject());
+  const projectIndex = $derived(getActiveProjectIndex());
+  const projectNotebook = $derived<NotebookType | null>(
+    project
+      ? {
+          id: project.notebooks[projectIndex]?.id ?? 'project-empty',
+          title: project.notebooks[projectIndex]?.title ?? project.title,
+          cells: project.notebooks[projectIndex]?.cells ?? [],
+          createdAt: '',
+          updatedAt: '',
+        }
+      : null,
+  );
   const activeNotebook = $derived(getActiveNotebook());
   const instance = $derived(getCurrentInstance());
   const sidebarCollapsed = $derived(isSidebarCollapsed());
@@ -113,7 +152,13 @@
         </div>
       {/if}
       <div class="body">
-        {#if shared}
+        {#if project && projectNotebook}
+          <Notebook notebook={projectNotebook} {instance} readOnly>
+            {#snippet toolbarExtras()}
+              <ProjectToolbar {project} />
+            {/snippet}
+          </Notebook>
+        {:else if shared}
           <Notebook notebook={shared.notebook} {instance} readOnly>
             {#snippet toolbarExtras()}
               <SharedNotebookToolbar notebook={shared.notebook} onClose={() => clearShared()} />
