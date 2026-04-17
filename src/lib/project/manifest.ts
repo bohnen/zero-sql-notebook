@@ -84,3 +84,25 @@ function unquote(raw: string): string {
   }
   return raw;
 }
+
+/**
+ * Emit the same minimal YAML shape that `parseManifest` accepts.
+ * `title` is optional; `notebooks` is always present (possibly empty).
+ */
+export function formatManifest(manifest: ProjectManifest): string {
+  const lines: string[] = [];
+  if (manifest.title !== undefined) {
+    lines.push(`title: ${quote(manifest.title)}`);
+  }
+  lines.push('notebooks:');
+  for (const file of manifest.notebooks) {
+    lines.push(`  - ${quote(file)}`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+function quote(value: string): string {
+  if (value.length === 0) return '""';
+  if (/^[A-Za-z0-9_\-./ ]+$/.test(value) && !value.startsWith('-')) return value;
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}

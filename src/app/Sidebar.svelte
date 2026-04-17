@@ -16,8 +16,10 @@
     setActiveProjectIndex,
   } from '../lib/state/project.svelte';
   import { downloadNotebookMarkdown, parseImportedMarkdown, readFileAsText } from '../lib/io/md';
+  import ExportProjectModal from './ExportProjectModal.svelte';
 
   let fileInput: HTMLInputElement | undefined = $state();
+  let exportOpen = $state(false);
   const activeId = $derived(getActiveId());
   const ordered = $derived(getOrderedNotebooks());
   const project = $derived(getProject());
@@ -81,6 +83,14 @@
       <div class="head-actions">
         <button type="button" onclick={() => createNotebook()} title="New notebook">+ New</button>
         <button type="button" onclick={() => fileInput?.click()} title="Import .md">Import</button>
+        <button
+          type="button"
+          onclick={() => (exportOpen = true)}
+          title="Export all notebooks as a project .zip"
+          disabled={ordered.length === 0}
+        >
+          Export…
+        </button>
         <input
           type="file"
           accept=".md,text/markdown"
@@ -143,6 +153,10 @@
     </ul>
   {/if}
 </aside>
+
+{#if exportOpen}
+  <ExportProjectModal notebooks={ordered} onClose={() => (exportOpen = false)} />
+{/if}
 
 <style>
   .sidebar {
