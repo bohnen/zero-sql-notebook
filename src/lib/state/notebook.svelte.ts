@@ -1,7 +1,7 @@
 import type { Cell, CellType, Notebook } from '../notebook/types';
 import { newId } from '../notebook/ids';
 import { createInitialNotebook } from '../notebook/seed';
-import { loadNotebooks, scheduleSave } from '../storage/store';
+import { loadNotebooks, loadOrder, scheduleSave, scheduleSaveOrder } from '../storage/store';
 import { showToast } from './toast.svelte';
 
 const ACTIVE_ID_KEY = 'active-notebook-id-v1';
@@ -16,21 +16,47 @@ function saveActiveId(id: string | null): void {
   else globalThis.localStorage.removeItem(ACTIVE_ID_KEY);
 }
 
-function bootstrap(): { notebooks: Record<string, Notebook>; activeId: string | null } {
+function reconcileOrder(map: Record<string, Notebook>, stored: string[]): string[] {
+  const ids = Object.keys(map);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  // Keep stored order for ids that still exist.
+  for (const id of stored) {
+    if (id in map && !seen.has(id)) {
+      out.push(id);
+      seen.add(id);
+    }
+  }
+  // Append any notebooks that aren't in the stored order (new or first-run),
+  // sorted by updatedAt desc so the initial view matches the old behaviour.
+  const rest = ids
+    .filter((id) => !seen.has(id))
+    .sort((a, b) => map[b].updatedAt.localeCompare(map[a].updatedAt));
+  for (const id of rest) out.push(id);
+  return out;
+}
+
+function bootstrap(): {
+  notebooks: Record<string, Notebook>;
+  activeId: string | null;
+  order: string[];
+} {
   const map = loadNotebooks();
   const ids = Object.keys(map);
   if (ids.length === 0) {
     const nb = createInitialNotebook();
-    return { notebooks: { [nb.id]: nb }, activeId: nb.id };
+    return { notebooks: { [nb.id]: nb }, activeId: nb.id, order: [nb.id] };
   }
   const stored = loadActiveId();
   const activeId = stored && map[stored] ? stored : ids[0];
-  return { notebooks: map, activeId };
+  const order = reconcileOrder(map, loadOrder());
+  return { notebooks: map, activeId, order };
 }
 
 const initial = bootstrap();
 let notebooks = $state<Record<string, Notebook>>(initial.notebooks);
 let activeId = $state<string | null>(initial.activeId);
+let notebookOrder = $state<string[]>(initial.order);
 
 function touch(n: Notebook): Notebook {
   return { ...n, updatedAt: new Date().toISOString() };
@@ -44,8 +70,25 @@ function updateActive(updater: (n: Notebook) => Notebook): void {
   notebooks = { ...notebooks, [activeId]: next };
 }
 
+function appendOrder(id: string): void {
+  if (notebookOrder.includes(id)) return;
+  notebookOrder = [...notebookOrder, id];
+}
+
+function removeFromOrder(id: string): void {
+  notebookOrder = notebookOrder.filter((x) => x !== id);
+}
+
 export function getNotebooks(): Record<string, Notebook> {
   return notebooks;
+}
+
+export function getNotebookOrder(): string[] {
+  return notebookOrder;
+}
+
+export function getOrderedNotebooks(): Notebook[] {
+  return notebookOrder.map((id) => notebooks[id]).filter((n): n is Notebook => !!n);
 }
 
 export function getActiveId(): string | null {
@@ -106,6 +149,16 @@ export function moveCell(cellId: string, direction: -1 | 1): void {
   });
 }
 
+export function moveNotebook(id: string, direction: -1 | 1): void {
+  const idx = notebookOrder.indexOf(id);
+  if (idx === -1) return;
+  const target = idx + direction;
+  if (target < 0 || target >= notebookOrder.length) return;
+  const next = [...notebookOrder];
+  [next[idx], next[target]] = [next[target], next[idx]];
+  notebookOrder = next;
+}
+
 export function createNotebook(): string {
   const now = new Date().toISOString();
   const nb: Notebook = {
@@ -116,6 +169,7 @@ export function createNotebook(): string {
     updatedAt: now,
   };
   notebooks = { ...notebooks, [nb.id]: nb };
+  appendOrder(nb.id);
   activeId = nb.id;
   return nb.id;
 }
@@ -132,6 +186,14 @@ export function duplicateNotebook(id: string): string | null {
     updatedAt: now,
   };
   notebooks = { ...notebooks, [copy.id]: copy };
+  // Insert right after the source for a natural "clone next to original" feel.
+  const srcIdx = notebookOrder.indexOf(id);
+  if (srcIdx === -1) appendOrder(copy.id);
+  else {
+    const next = [...notebookOrder];
+    next.splice(srcIdx + 1, 0, copy.id);
+    notebookOrder = next;
+  }
   activeId = copy.id;
   return copy.id;
 }
@@ -141,10 +203,10 @@ export function deleteNotebook(id: string): void {
   const next: Record<string, Notebook> = {};
   for (const [k, v] of Object.entries(notebooks)) if (k !== id) next[k] = v;
   notebooks = next;
+  removeFromOrder(id);
   if (activeId === id) {
-    const remaining = Object.keys(next);
-    if (remaining.length === 0) createNotebook();
-    else activeId = remaining[0];
+    if (notebookOrder.length === 0) createNotebook();
+    else activeId = notebookOrder[0];
   }
 }
 
@@ -169,6 +231,7 @@ export function importNotebook(
     gistId: options.gistId,
   };
   notebooks = { ...notebooks, [nb.id]: nb };
+  appendOrder(nb.id);
   activeId = nb.id;
   return nb.id;
 }
@@ -186,6 +249,9 @@ export function initAutoSave(): () => void {
     });
     $effect(() => {
       saveActiveId(activeId);
+    });
+    $effect(() => {
+      scheduleSaveOrder(notebookOrder);
     });
   });
 }

@@ -4,8 +4,9 @@
     deleteNotebook,
     duplicateNotebook,
     getActiveId,
-    getNotebooks,
+    getOrderedNotebooks,
     importNotebook,
+    moveNotebook,
     renameNotebook,
     setActiveId,
   } from '../lib/state/notebook.svelte';
@@ -13,9 +14,7 @@
 
   let fileInput: HTMLInputElement | undefined = $state();
   const activeId = $derived(getActiveId());
-  const sorted = $derived(
-    Object.values(getNotebooks()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-  );
+  const ordered = $derived(getOrderedNotebooks());
 
   function timeAgo(iso: string): string {
     const diff = Date.now() - new Date(iso).getTime();
@@ -64,13 +63,27 @@
     </div>
   </div>
   <ul class="list">
-    {#each sorted as nb (nb.id)}
+    {#each ordered as nb, idx (nb.id)}
       <li class:active={nb.id === activeId}>
         <button type="button" class="entry" onclick={() => setActiveId(nb.id)}>
           <div class="title">{nb.title || 'Untitled'}</div>
           <div class="meta">Updated {timeAgo(nb.updatedAt)}</div>
         </button>
         <div class="row-actions">
+          <button
+            type="button"
+            title="Move up"
+            disabled={idx === 0}
+            onclick={() => moveNotebook(nb.id, -1)}
+            aria-label="Move up">▲</button
+          >
+          <button
+            type="button"
+            title="Move down"
+            disabled={idx === ordered.length - 1}
+            onclick={() => moveNotebook(nb.id, 1)}
+            aria-label="Move down">▼</button
+          >
           <button
             type="button"
             title="Rename"
