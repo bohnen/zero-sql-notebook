@@ -1,6 +1,7 @@
 <script lang="ts">
   import DOMPurify from 'dompurify';
   import { marked } from 'marked';
+  import { autosize } from '../../editor/autosize';
 
   interface Props {
     source: string;
@@ -16,6 +17,7 @@
 {#if editing && !readOnly}
   <!-- svelte-ignore a11y_autofocus -->
   <textarea
+    use:autosize={source}
     value={source}
     autofocus
     oninput={(e) => onChange((e.currentTarget as HTMLTextAreaElement).value)}
@@ -49,7 +51,9 @@
     padding: 8px;
     font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
     font-size: 13px;
-    resize: vertical;
+    resize: none;
+    overflow: hidden;
+    display: block;
   }
   .preview {
     display: block;

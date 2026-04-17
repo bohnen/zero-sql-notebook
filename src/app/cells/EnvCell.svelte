@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { autosize } from '../../editor/autosize';
   import { parseEnv } from '../../lib/env/parse';
 
   interface Props {
@@ -13,6 +14,7 @@
 </script>
 
 <textarea
+  use:autosize={source}
   value={source}
   readonly={readOnly}
   oninput={(e) => onChange((e.currentTarget as HTMLTextAreaElement).value)}
@@ -40,7 +42,9 @@
     padding: 8px;
     font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
     font-size: 13px;
-    resize: vertical;
+    resize: none;
+    overflow: hidden;
+    display: block;
   }
   .meta {
     margin-top: 6px;
